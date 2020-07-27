@@ -14,7 +14,7 @@ pipeline {
     choice(name: 'TARGET_PLATFORM', choices: ['oxygen', 'photon', 'r201809', 'r201812', 'r201903', 'r201906', 'r201909', 'r201912', 'r202003', 'r202006', 'r202009', 'r202012', 'latest'], description: 'Which Target Platform should be used?')
     // see https://wiki.eclipse.org/Jenkins#JDK
     choice(name: 'JDK_VERSION', description: 'Which JDK should be used?', choices: [
-       'adoptopenjdk-hotspot-jdk8-latest', 'adoptopenjdk-hotspot-jdk11-latest', 'adoptopenjdk-hotspot-latest'
+       'adoptopenjdk-hotspot-jdk11-latest'
     ])
     booleanParam(
       name: 'TRIGGER_DOWNSTREAM_BUILD', 
@@ -162,7 +162,7 @@ pipeline {
 
 /** return the Java version as Integer (8, 11, ...) */
 def javaVersion() {
-  return Integer.parseInt(params.JDK_VERSION.replaceAll(".*-jdk(\\d+).*", "\$1"))
+  return 11
 }
 
 /** returns true when this build was triggered by an upstream build */
@@ -197,15 +197,6 @@ def eclipseVersion() {
  * is returned.
  */
 def selectedTargetPlatform() {
-    def tp = params.TARGET_PLATFORM
-    def isUpstream = isTriggeredByUpstream()
-    def javaVersion = javaVersion()
-    
-    if (isTriggeredByUpstream() && javaVersion>=11) {
-        println("Choosing 'latest' target since this build was triggered by upstream with Java ${javaVersion}")
-        return 'latest'
-    } else {
-        return tp
-    }
+    return "latest"
 }
 
