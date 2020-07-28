@@ -8,7 +8,7 @@
 	<packaging>pom</packaging>
 
 	<properties>
-		<tycho-version>1.7.0</tycho-version>
+		<tycho-version>2.2.0</tycho-version>
 		<!-- version of the "bootstrap" plugin; used to compile xtend sources in xtend -->
 		<xtend-maven-plugin-version>2.24.0</xtend-maven-plugin-version>
 		<project.build.sourceEncoding>ISO-8859-1</project.build.sourceEncoding>
@@ -21,6 +21,28 @@
 		<target-platform-classifier></target-platform-classifier>
 		<JENKINS_URL>https://ci.eclipse.org/xtext</JENKINS_URL>
 	</properties>
+
+		<pluginRepositories>
+		<pluginRepository>
+			<id>xtend-bootstrap</id>
+			<url>${JENKINS_URL}/job/xtend-bootstrap/lastStableBuild/artifact/build-result/maven-repository/</url>
+			<releases>
+				<enabled>false</enabled>
+			</releases>
+			<snapshots>
+				<enabled>true</enabled>
+			</snapshots>
+		</pluginRepository>
+		    <pluginRepository>
+      <id>tycho-snapshots</id>
+      <url>https://repo.eclipse.org/content/repositories/tycho-snapshots/</url>
+    </pluginRepository>
+    <pluginRepository>
+      <id>tycho-staged</id>
+      <url>
+https://oss.sonatype.org/content/repositories/orgeclipsetycho-1065</url>
+    </pluginRepository>
+	</pluginRepositories>
 
 	<profiles>
 		<profile>
