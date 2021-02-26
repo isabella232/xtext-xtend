@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2011 itemis AG (http://www.itemis.eu) and others.
+ * Copyright (c) 2011, 2021 itemis AG (http://www.itemis.eu) and others.
  * This program and the accompanying materials are made available under the
  * terms of the Eclipse Public License 2.0 which is available at
  * http://www.eclipse.org/legal/epl-2.0.
@@ -58,23 +58,53 @@ public class DispatchMethodCompileStrategy implements Procedures.Procedure1<ITre
 	public void apply(/* @Nullable */ ITreeAppendable a) {
 		if (a == null)
 			throw new IllegalArgumentException("a is never null");
-		boolean needsElse = true;
+		boolean needsElse = false;
+		boolean needsLastCase = false;
 		int parameterCount = dispatchOperation.getParameters().size();
 		List<JvmOperation> sortedDispatchOperations = sorter.getAllDispatchCases(dispatchOperation);
+		ITypeReferenceOwner owner = new StandardTypeReferenceOwner(services, dispatchOperation);
 		boolean[] allCasesSameType = new boolean[parameterCount];
+		boolean[] voidIncluded = new boolean[parameterCount];
+		boolean[] notNullIncluded = new boolean[parameterCount];
 		for(int i = 0; i < parameterCount; i++) {
 			allCasesSameType[i] = true;
-			JvmTypeReference dispatchParameterType = dispatchOperation.getParameters().get(i).getParameterType();
+			voidIncluded[i] = false;
+			notNullIncluded[i] = false;
+			JvmFormalParameter dispatchParam = dispatchOperation.getParameters().get(i);
+			LightweightTypeReference dispatchParamType = owner.toLightweightTypeReference(dispatchParam.getParameterType());
+			JvmTypeReference dispatchParameterType = dispatchParam.getParameterType();
 			for (JvmOperation operation : sortedDispatchOperations) {
-				JvmFormalParameter parameter = operation.getParameters().get(i);
-				JvmTypeReference caseParameterType = parameter.getParameterType();
+				JvmFormalParameter caseParam = operation.getParameters().get(i);
+				JvmTypeReference caseParameterType = caseParam.getParameterType();
+				LightweightTypeReference caseParamType = owner.toLightweightTypeReference(caseParam.getParameterType());
 				if (!Strings.equal(dispatchParameterType.getIdentifier(), caseParameterType.getIdentifier())) {
 					allCasesSameType[i] = false;
-					break;
+				}
+				if (caseParamType.isType(Void.class)) {
+					voidIncluded[i] = true;
+				}
+				TypeConformanceComputationArgument rawNoSynonyms = new TypeConformanceComputationArgument(true, false, true, true, false, false);
+				if (caseParamType.isAssignableFrom(dispatchParamType, rawNoSynonyms) && !dispatchParamType.isPrimitive()) {
+					notNullIncluded[i] = true;
 				}
 			}
 		}
-		ITypeReferenceOwner owner = new StandardTypeReferenceOwner(services, dispatchOperation);
+		for (boolean v : voidIncluded) {
+			if (!v) {
+				needsElse = true;
+				break;
+			}
+		}
+		if (parameterCount == 1 && sortedDispatchOperations.size() == 1)
+			needsElse = false;
+		for (boolean n : notNullIncluded) {
+			if (!n) {
+				needsLastCase = true;
+				break;
+			}
+		}
+		if (needsElse || (parameterCount == 1 && sortedDispatchOperations.size() == 1))
+			needsLastCase = true;
 		for (JvmOperation operation : sortedDispatchOperations) {
 			ITreeAppendable operationAppendable = treeAppendableUtil.traceSignificant(a, operation, true);
 			final List<Later> laters = newArrayList();
@@ -110,36 +140,41 @@ public class DispatchMethodCompileStrategy implements Procedures.Procedure1<ITre
 					});
 				}
 			}
+			boolean isLast = sortedDispatchOperations.get(sortedDispatchOperations.size() - 1) == operation;
 			// if it's not the first if append an 'else'
 			if (sortedDispatchOperations.get(0) != operation) {
 				operationAppendable.append(" else ");
 			}
 			if (laters.isEmpty()) {
-				needsElse = false;
 				if (sortedDispatchOperations.size() != 1) {
 					operationAppendable.append("{").increaseIndentation();
 					operationAppendable.newLine();
 				}
 			} else {
-				operationAppendable.append("if (");
-				operationAppendable.increaseIndentation().increaseIndentation();
-				Iterator<Later> iterator = laters.iterator();
-				while (iterator.hasNext()) {
-					iterator.next().exec(operationAppendable);
-					if (iterator.hasNext()) {
-						operationAppendable.newLine().append(" && ");
+				if (!isLast || needsLastCase) {
+					operationAppendable.append("if (");
+					operationAppendable.increaseIndentation().increaseIndentation();
+					Iterator<Later> iterator = laters.iterator();
+					while (iterator.hasNext()) {
+						iterator.next().exec(operationAppendable);
+						if (iterator.hasNext()) {
+							operationAppendable.newLine().append(" && ");
+						}
 					}
+					operationAppendable.decreaseIndentation().decreaseIndentation();
+					operationAppendable.append(") {").increaseIndentation();
+					operationAppendable.newLine();
 				}
-				operationAppendable.decreaseIndentation().decreaseIndentation();
-				operationAppendable.append(") {").increaseIndentation();
-				operationAppendable.newLine();
 			}
 			final boolean isCurrentVoid = typeReferences.is(operation.getReturnType(), Void.TYPE);
 			final boolean isDispatchVoid = typeReferences.is(dispatchOperation.getReturnType(), Void.TYPE);
 			if (isDispatchVoid) {
 				generateActualDispatchCall(dispatchOperation, operation, operationAppendable, owner);
+				operationAppendable.append(";");
 				// we generate a redundant return statement here to get a better debugging experience
-				operationAppendable.append(";").newLine().append("return;");
+				if (!isLast || needsLastCase) {
+					operationAppendable.newLine().append("return;");
+				}
 			} else {
 				if (isCurrentVoid) {
 					generateActualDispatchCall(dispatchOperation, operation, operationAppendable, owner);
@@ -150,7 +185,7 @@ public class DispatchMethodCompileStrategy implements Procedures.Procedure1<ITre
 				}
 				operationAppendable.append(";");
 			}
-			if (sortedDispatchOperations.size() != 1) {
+			if (sortedDispatchOperations.size() != 1 && (!isLast || needsLastCase)) {
 				operationAppendable.decreaseIndentation();
 				a.newLine().append("}");
 			}
